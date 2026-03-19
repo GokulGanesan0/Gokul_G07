@@ -22,35 +22,57 @@ export default function ScrollyCanvas() {
   const frameIndex = useTransform(scrollYProgress, [0, 1], [0, TOTAL_FRAMES - 1]);
 
   useEffect(() => {
-    // Preload all images continuously
+    // Determine path prefix for GitHub Pages production vs local dev
+    const basePath = process.env.NODE_ENV === 'production' ? '/Gokul_G07' : '';
     const loadedImages: HTMLImageElement[] = [];
 
     for (let i = 0; i < TOTAL_FRAMES; i++) {
       const img = new Image();
       const paddedIndex = i.toString().padStart(3, "0");
-      img.src = `./sequence/frame_${paddedIndex}_delay-0.041s.png`;
+      img.src = `${basePath}/sequence/frame_${paddedIndex}_delay-0.041s.png`;
       loadedImages.push(img);
     }
     
-    // Important Fix for Windows Chrome: Don't wait for all 192 frames to load before releasing the lock!
-    // Chrome restricts concurrent connections. If we wait, the loading screen hangs infinitely.
     setImages(loadedImages);
     setIsLoaded(true);
 
-    // Give it a quick starter frame as soon as frame 0 naturally loads
-    if (loadedImages[0]) {
-      loadedImages[0].onload = () => drawFrame(loadedImages[0]);
-    }
+    // Initial draw logic that handles Chrome's aggressive caching
+    const attemptInitialDraw = () => {
+      if (loadedImages[0]) {
+        if (loadedImages[0].complete) {
+          drawFrame(loadedImages[0]);
+        } else {
+          loadedImages[0].onload = () => drawFrame(loadedImages[0]);
+        }
+      }
+    };
     
-    // Resize handler to redraw when window size changes
+    attemptInitialDraw();
+    
+    // Also use requestAnimationFrame as a fallback to guarantee the image appears 
+    // rapidly if onload drops but the image silently succeeded downloading
+    let rAF: number;
+    const ensureDraw = () => {
+      if (loadedImages[0] && loadedImages[0].complete) {
+        drawFrame(loadedImages[Math.round(frameIndex.get())]);
+      } else {
+        rAF = requestAnimationFrame(ensureDraw);
+      }
+    };
+    rAF = requestAnimationFrame(ensureDraw);
+
     const handleResize = () => {
       if (loadedImages.length > 0) {
         drawFrame(loadedImages[Math.round(frameIndex.get())]);
       }
     };
     window.addEventListener("resize", handleResize);
-    return () => window.removeEventListener("resize", handleResize);
-  }, []);
+    
+    return () => {
+      window.removeEventListener("resize", handleResize);
+      cancelAnimationFrame(rAF);
+    };
+  }, [frameIndex]);
 
   // Draw the current frame whenever the scroll-linked frameIndex changes
   useMotionValueEvent(frameIndex, "change", (latest) => {
