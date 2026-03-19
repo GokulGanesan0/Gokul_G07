@@ -22,40 +22,30 @@ export default function ScrollyCanvas() {
   const frameIndex = useTransform(scrollYProgress, [0, 1], [0, TOTAL_FRAMES - 1]);
 
   useEffect(() => {
-    // Preload all images
+    // Preload all images continuously
     const loadedImages: HTMLImageElement[] = [];
-    let loadedCount = 0;
 
     for (let i = 0; i < TOTAL_FRAMES; i++) {
       const img = new Image();
       const paddedIndex = i.toString().padStart(3, "0");
       img.src = `./sequence/frame_${paddedIndex}_delay-0.041s.png`;
-      
-      img.onload = () => {
-        loadedCount++;
-        if (loadedCount === TOTAL_FRAMES) {
-          // All images loaded
-          setImages(loadedImages);
-          setIsLoaded(true);
-          // Draw the first frame immediately
-          drawFrame(loadedImages[0]);
-        }
-      };
-      // In case of error (e.g. missing frame), we should still increment
-      img.onerror = () => {
-        loadedCount++;
-        if (loadedCount === TOTAL_FRAMES) {
-          setImages(loadedImages);
-          setIsLoaded(true);
-        }
-      }
       loadedImages.push(img);
+    }
+    
+    // Important Fix for Windows Chrome: Don't wait for all 192 frames to load before releasing the lock!
+    // Chrome restricts concurrent connections. If we wait, the loading screen hangs infinitely.
+    setImages(loadedImages);
+    setIsLoaded(true);
+
+    // Give it a quick starter frame as soon as frame 0 naturally loads
+    if (loadedImages[0]) {
+      loadedImages[0].onload = () => drawFrame(loadedImages[0]);
     }
     
     // Resize handler to redraw when window size changes
     const handleResize = () => {
-      if (images.length > 0) {
-        drawFrame(images[Math.round(frameIndex.get())]);
+      if (loadedImages.length > 0) {
+        drawFrame(loadedImages[Math.round(frameIndex.get())]);
       }
     };
     window.addEventListener("resize", handleResize);
